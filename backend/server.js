@@ -1,65 +1,57 @@
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-dotenv.config(); // ✅ load environment variables
+dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-
-// ✅ Use Gemini API instead of OpenAI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-app.post("/api/generate-quiz", async (req, res) => {
-  const { topic, difficulty } = req.body;
-
+app.post("/generate-quiz", async (req, res) => {
   try {
+    const { topic, difficulty } = req.body;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
     const prompt = `
-    Generate 5 multiple-choice quiz questions about "${topic}".
-    Difficulty: ${difficulty}.
-    Return the response strictly in JSON with this format:
+    Generate a quiz on the topic "${topic}" with difficulty "${difficulty}".
+    Return exactly 5 multiple-choice questions in JSON format like this:
     {
       "topic": "${topic}",
       "difficulty": "${difficulty}",
       "questions": [
         {
-          "question": "string",
+          "question": "text",
           "options": ["A", "B", "C", "D"],
-          "answerIndex": number,
-          "explanation": "string"
+          "answerIndex": 0,
+          "explanation": "short explanation"
         }
       ]
-    }`;
+    }
+    `;
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
 
     console.log("🔍 Raw Gemini response:", text);
 
-    let quiz;
-    try {
-      quiz = JSON.parse(text);
-    } catch {
-      return res.status(500).json({
-        error: "invalid_format",
-        details: "Gemini did not return valid JSON",
-        raw: text
-      });
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return res.status(500).json({ error: "Failed to parse AI response" });
     }
 
+    const quiz = JSON.parse(jsonMatch[0]);
     res.json(quiz);
+
   } catch (error) {
-    console.error("❌ Gemini API Error:", error.message);
-    res.status(500).json({ error: "generation_failed", details: error.message });
+    console.error("❌ Gemini API Error:", error);
+    res.status(500).json({ error: "Failed to generate quiz" });
   }
 });
 
-const PORT = 5000;
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-);
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
